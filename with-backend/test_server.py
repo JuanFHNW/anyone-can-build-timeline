@@ -78,6 +78,17 @@ class ModelTests(unittest.TestCase):
         rows = server.posts_after(self.db_path, 1)
         self.assertEqual([row["text"] for row in rows], ["second", "third"])
 
+    def test_author_can_edit_their_post(self):
+        row = server.save_post(self.db_path, "Aiko", "first")
+        edited = server.update_post(self.db_path, row["id"], "Aiko", "edited")
+        self.assertEqual(edited["text"], "edited")
+        self.assertEqual(edited["author"], "Aiko")
+
+    def test_another_author_cannot_edit_a_post(self):
+        row = server.save_post(self.db_path, "Aiko", "first")
+        with self.assertRaises(server.RuleBroken):
+            server.update_post(self.db_path, row["id"], "Ben", "changed")
+
 
     def test_log_line_has_the_time_the_author_and_the_text(self):
         row = server.save_post(self.db_path, "Aiko", "the library is open late tonight")
@@ -108,6 +119,15 @@ class RealServerTest(unittest.TestCase):
         )
         return urllib.request.urlopen(request)
 
+    def put(self, post_id, data):
+        request = urllib.request.Request(
+            self.base + "/posts/" + str(post_id),
+            data=json.dumps(data).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="PUT",
+        )
+        return urllib.request.urlopen(request)
+
     def test_post_then_get(self):
         answer = self.post({"author": "Aiko", "text": "hello"})
         self.assertEqual(answer.status, 201)
@@ -116,6 +136,14 @@ class RealServerTest(unittest.TestCase):
         self.assertEqual(len(posts), 1)
         self.assertEqual(posts[0]["author"], "Aiko")
         self.assertEqual(posts[0]["text"], "hello")
+
+    def test_author_can_edit_through_http(self):
+        with self.post({"author": "Aiko", "text": "hello"}) as answer:
+            post = json.loads(answer.read())
+        with self.put(post["id"], {"author": "Aiko", "text": "changed"}) as answer:
+            edited = json.loads(answer.read())
+        self.assertEqual(answer.status, 200)
+        self.assertEqual(edited["text"], "changed")
 
     def test_empty_post_gets_400_and_a_reason(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:

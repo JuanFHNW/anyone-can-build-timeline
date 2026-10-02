@@ -114,6 +114,18 @@ button {
   cursor: pointer;
 }
 
+.cancel-button,
+.edit-button {
+  margin-right: 8px;
+  padding: 8px 16px;
+  background: var(--border);
+  font-size: 0.8em;
+}
+
+.edit-button {
+  margin: 10px 0 0;
+}
+
 .status {
   min-height: 1.4em;
   margin: 12px 0;

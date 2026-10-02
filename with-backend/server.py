@@ -75,6 +75,31 @@ class TimelineHandler(BaseHTTPRequestHandler):
         self.send_json(201, post_to_json(row))
         print(post_to_log_line(row), flush=True)   # one line in the terminal for each new post
 
+    def do_PUT(self):
+        url = urlparse(self.path)
+        if not url.path.startswith("/posts/"):
+            self.send_json(404, {"error": "You can only edit a post at /posts/<id>"})
+            return
+        try:
+            post_id = int(url.path[len("/posts/"):])
+            length = int(self.headers.get("Content-Length") or 0)
+            data = json.loads(self.rfile.read(length))
+        except (ValueError, TypeError):
+            self.send_json(400, {"error": "The request must contain a post id and JSON."})
+            return
+        if not isinstance(data, dict):
+            self.send_json(400, {"error": "The request must be a JSON object."})
+            return
+        try:
+            row = update_post(self.server.db_path, post_id, data.get("author"), data.get("text"))
+        except RuleBroken as problem:
+            self.send_json(400, {"error": str(problem)})
+            return
+        if row is None:
+            self.send_json(404, {"error": "That post does not exist."})
+            return
+        self.send_json(200, post_to_json(row))
+
     def send_json(self, status, data):
         body = json.dumps(data).encode("utf-8")
         self.send_answer(status, "application/json; charset=utf-8", body)
@@ -175,6 +200,26 @@ def save_post(db_path, author, text):
                              (cursor.lastrowid,)).fetchone()
     connection.close()
     return row
+
+
+def update_post(db_path, post_id, author, text):
+    """Check ownership and rules, update a post, and return the saved row."""
+    author, text = check_rules(author, text)
+    connection = connect(db_path)
+    row = connection.execute(POSTS_WITH_AUTHORS + " WHERE posts.id = ?",
+                             (post_id,)).fetchone()
+    if row is None:
+        connection.close()
+        return None
+    if row["author"] != author:
+        connection.close()
+        raise RuleBroken("You can only edit your own posts.")
+    connection.execute("UPDATE posts SET text = ? WHERE id = ?", (text, post_id))
+    connection.commit()
+    updated = connection.execute(POSTS_WITH_AUTHORS + " WHERE posts.id = ?",
+                                 (post_id,)).fetchone()
+    connection.close()
+    return updated
 
 
 def posts_after(db_path, after):

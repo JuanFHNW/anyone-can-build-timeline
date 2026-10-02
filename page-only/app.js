@@ -20,6 +20,9 @@ const countLine = document.getElementById("count");
 const statusLine = document.getElementById("status");
 const timeline = document.getElementById("timeline");
 const postForm = document.getElementById("post-form");
+const submitButton = document.getElementById("submit-post");
+const cancelEditButton = document.getElementById("cancel-edit");
+let editingPostId = null;
 
 // Read the saved posts from this window. Oldest first.
 function loadPosts() {
@@ -64,6 +67,13 @@ function timeNow() {
 function showPost(post) {
   const item = document.createElement("li");
   item.className = "post";
+  item.dataset.postId = post.id;
+  updatePostItem(item, post);
+  timeline.prepend(item);
+}
+
+function updatePostItem(item, post) {
+  item.replaceChildren();
 
   const author = document.createElement("span");
   author.className = "post-author";
@@ -77,9 +87,42 @@ function showPost(post) {
   text.className = "post-text";
   text.textContent = post.text;
 
+  const edit = document.createElement("button");
+  edit.className = "edit-button";
+  edit.type = "button";
+  edit.textContent = "Edit";
+  edit.hidden = authorBox.value.trim() !== post.author;
+  edit.addEventListener("click", function () {
+    startEdit(post);
+  });
+
   // textContent, never innerHTML: a post is shown as words, so it cannot run code on the page.
-  item.append(author, time, text);
-  timeline.prepend(item);
+  item.append(author, time, text, edit);
+}
+
+function refreshEditButtons() {
+  for (const item of timeline.querySelectorAll(".post")) {
+    const edit = item.querySelector(".edit-button");
+    const author = item.querySelector(".post-author").textContent;
+    edit.hidden = authorBox.value.trim() !== author;
+  }
+}
+
+function startEdit(post) {
+  editingPostId = post.id;
+  textBox.value = post.text;
+  submitButton.textContent = "Save edit";
+  cancelEditButton.hidden = false;
+  updateCount();
+  textBox.focus();
+}
+
+function cancelEdit() {
+  editingPostId = null;
+  textBox.value = "";
+  submitButton.textContent = "Post";
+  cancelEditButton.hidden = true;
+  updateCount();
 }
 
 function showStatus(words) {
@@ -105,6 +148,22 @@ function addPost(event) {
   }
 
   const posts = loadPosts();
+  if (editingPostId !== null) {
+    const post = posts.find(function (savedPost) {
+      return savedPost.id === editingPostId;
+    });
+    if (!post || post.author !== author) {
+      showStatus("You can only edit your own posts.");
+      return;
+    }
+    post.text = text;
+    savePosts(posts);
+    const item = timeline.querySelector('[data-post-id="' + editingPostId + '"]');
+    updatePostItem(item, post);
+    cancelEdit();
+    showStatus("");
+    return;
+  }
   const post = { id: posts.length + 1, author: author, text: text, posted_at: timeNow() };
   posts.push(post);
   savePosts(posts);
@@ -121,4 +180,6 @@ for (const post of loadPosts()) {
 }
 
 textBox.addEventListener("input", updateCount);
+authorBox.addEventListener("input", refreshEditButtons);
+cancelEditButton.addEventListener("click", cancelEdit);
 postForm.addEventListener("submit", addPost);

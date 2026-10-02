@@ -13,20 +13,34 @@ const countLine = document.getElementById("count");
 const statusLine = document.getElementById("status");
 const timeline = document.getElementById("timeline");
 const postForm = document.getElementById("post-form");
+const submitButton = document.getElementById("submit-post");
+const cancelEditButton = document.getElementById("cancel-edit");
 
 // The id of the newest post this window has shown. 0 means "none yet".
 let lastId = 0;
+let editingPostId = null;
 
 // Put one post at the top of the timeline, so the newest is always first.
 function showPost(post) {
   // Skip a post this window already shows.
   if (post.id <= lastId) {
+    const existing = timeline.querySelector('[data-post-id="' + post.id + '"]');
+    if (existing) {
+      updatePostItem(existing, post);
+    }
     return;
   }
   lastId = post.id;
 
   const item = document.createElement("li");
   item.className = "post";
+  item.dataset.postId = post.id;
+  updatePostItem(item, post);
+  timeline.prepend(item);
+}
+
+function updatePostItem(item, post) {
+  item.replaceChildren();
 
   const author = document.createElement("span");
   author.className = "post-author";
@@ -40,9 +54,42 @@ function showPost(post) {
   text.className = "post-text";
   text.textContent = post.text;
 
+  const edit = document.createElement("button");
+  edit.className = "edit-button";
+  edit.type = "button";
+  edit.textContent = "Edit";
+  edit.hidden = authorBox.value.trim() !== post.author;
+  edit.addEventListener("click", function () {
+    startEdit(post);
+  });
+
   // textContent, never innerHTML: a post is shown as words, so it cannot run code on the page.
-  item.append(author, time, text);
-  timeline.prepend(item);
+  item.append(author, time, text, edit);
+}
+
+function refreshEditButtons() {
+  for (const item of timeline.querySelectorAll(".post")) {
+    const edit = item.querySelector(".edit-button");
+    const author = item.querySelector(".post-author").textContent;
+    edit.hidden = authorBox.value.trim() !== author;
+  }
+}
+
+function startEdit(post) {
+  editingPostId = post.id;
+  textBox.value = post.text;
+  submitButton.textContent = "Save edit";
+  cancelEditButton.hidden = false;
+  updateCount();
+  textBox.focus();
+}
+
+function cancelEdit() {
+  editingPostId = null;
+  textBox.value = "";
+  submitButton.textContent = "Post";
+  cancelEditButton.hidden = true;
+  updateCount();
 }
 
 function showStatus(words) {
@@ -94,8 +141,10 @@ async function sendPost(event) {
   }
 
   try {
-    const response = await fetch("/posts", {
-      method: "POST",
+    const editing = editingPostId !== null;
+    const url = editing ? "/posts/" + editingPostId : "/posts";
+    const response = await fetch(url, {
+      method: editing ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ author: author, text: text }),
     });
@@ -103,6 +152,12 @@ async function sendPost(event) {
     if (!response.ok) {
       // The server refused the post. It says which rule was broken.
       showStatus(answer.error);
+      return;
+    }
+    if (editing) {
+      showPost(answer);
+      cancelEdit();
+      showStatus("");
       return;
     }
     // Saved. Ask for new posts now, instead of waiting for the next second.
@@ -117,5 +172,7 @@ async function sendPost(event) {
 }
 
 textBox.addEventListener("input", updateCount);
+authorBox.addEventListener("input", refreshEditButtons);
+cancelEditButton.addEventListener("click", cancelEdit);
 postForm.addEventListener("submit", sendPost);
 keepChecking();
